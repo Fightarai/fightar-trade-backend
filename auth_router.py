@@ -6,19 +6,16 @@ import os
 import pymongo
 from datetime import datetime, timedelta
 
-router = APIRouter()
+router = APIRouter()  # DO NOT miss this
+
 SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
-# Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# MongoDB connection
 client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users = db["users"]
 
-# Create JWT token
 def create_token(data: dict):
     expire = datetime.utcnow() + timedelta(hours=24)
     data.update({"exp": expire})
