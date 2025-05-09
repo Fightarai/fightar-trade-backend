@@ -12,6 +12,8 @@ app = FastAPI()
 app.include_router(auth_router)
 app.include_router(api_keys_router)
 
-@app.get("/")
-def root():
-    return {"message": "✅ Fightar Trade Backend is LIVE"}
+@app.get("/ping")
+def ping():
+    return {"msg": "This is the latest deployment ✅"}
+
+
