@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from user_model import User, Token
 from passlib.context import CryptContext
 from jose import jwt
@@ -13,11 +13,12 @@ ALGORITHM = "HS256"
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# MongoDB
+# MongoDB connection
 client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users = db["users"]
 
+# Create JWT token
 def create_token(data: dict):
     expire = datetime.utcnow() + timedelta(hours=24)
     data.update({"exp": expire})
