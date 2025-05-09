@@ -1,0 +1,12 @@
+name: fightar-trade-backend
+type: python
+
+build:
+  env:
+    - name: PYTHON_VERSION
+      value: 3.11
+  commands:
+    - pip install -r requirements.txt
+
+run:
+  web: uvicorn main:app --host 0.0.0.0 --port 8080
