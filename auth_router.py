@@ -76,10 +76,15 @@ def verify_token(token: str):
         raise HTTPException(status_code=401, detail="Token verification failed")
 
 # Protected Route
-from fastapi import Header
+from fastapi import Request
 
 @router.get("/protected")
-def protected_route(token: str = Header(...)):
+def protected_route(request: Request):
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
+    token = auth_header.split(" ")[1]  # Get the token part only
     username = verify_token(token)
     return {"msg": f"Access granted for {username}"}
 
