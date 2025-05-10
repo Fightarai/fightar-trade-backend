@@ -8,7 +8,7 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # MongoDB setup
-client = pymongo.MongoClient(os.getenv("MONGODB_URL"))
+client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users_collection = db["users"]
 
