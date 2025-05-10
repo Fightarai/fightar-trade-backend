@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from passlib.context import CryptContext
 from jose import JWTError, jwt, ExpiredSignatureError
 from datetime import datetime, timedelta
@@ -14,7 +14,7 @@ client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users_collection = db["users"]
 
-# JWT Config (always secure your secret)
+# JWT Config
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretjwtkey")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
@@ -22,13 +22,12 @@ REFRESH_TOKEN_EXPIRE_DAYS = 7
 
 # Models
 class RegisterRequest(BaseModel):
-    username: str
-    email: str
+    email: EmailStr
     password: str
     role: str  # "admin", "client", or "bot"
 
 class LoginRequest(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 # REGISTER
@@ -37,13 +36,12 @@ def register_user(request: RegisterRequest):
     if request.role not in ["admin", "client", "bot"]:
         raise HTTPException(status_code=400, detail="Invalid role")
 
-    existing_user = users_collection.find_one({"username": request.username})
+    existing_user = users_collection.find_one({"email": request.email})
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username already exists")
+        raise HTTPException(status_code=400, detail="Email already registered")
 
     hashed_password = pwd_context.hash(request.password)
     user_data = {
-        "username": request.username,
         "email": request.email,
         "password": hashed_password,
         "role": request.role
@@ -55,24 +53,22 @@ def register_user(request: RegisterRequest):
 # LOGIN
 @router.post("/login", tags=["auth"])
 def login_user(request: LoginRequest):
-    user = users_collection.find_one({"username": request.username})
+    user = users_collection.find_one({"email": request.email})
     if not user or not pwd_context.verify(request.password, user["password"]):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Access token
     access_payload = {
-        "sub": user["username"],
+        "sub": user["email"],
         "role": user.get("role", "client"),
         "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     }
-    access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
-
-    # Refresh token
     refresh_payload = {
-        "sub": user["username"],
+        "sub": user["email"],
         "role": user.get("role", "client"),
         "exp": datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     }
+
+    access_token = jwt.encode(access_payload, SECRET_KEY, algorithm=ALGORITHM)
     refresh_token = jwt.encode(refresh_payload, SECRET_KEY, algorithm=ALGORITHM)
 
     return {
@@ -84,8 +80,7 @@ def login_user(request: LoginRequest):
 # VERIFY TOKEN
 def verify_token(token: str):
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
     except JWTError:
@@ -97,6 +92,7 @@ def protected_route(request: Request):
     auth_header = request.headers.get("authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+
     token = auth_header.split(" ")[1]
     payload = verify_token(token)
     return {
@@ -115,7 +111,7 @@ def get_profile(request: Request):
     payload = verify_token(token)
 
     return {
-        "username": payload["sub"],
+        "email": payload["sub"],
         "role": payload.get("role", "unknown"),
         "token_expires": payload["exp"]
     }
@@ -144,7 +140,7 @@ def refresh_token(request: Request):
 
     try:
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
+        email = payload.get("sub")
         role = payload.get("role", "client")
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Refresh token expired")
@@ -152,7 +148,7 @@ def refresh_token(request: Request):
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
     new_access_token = jwt.encode({
-        "sub": username,
+        "sub": email,
         "role": role,
         "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     }, SECRET_KEY, algorithm=ALGORITHM)
