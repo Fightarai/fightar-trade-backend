@@ -103,7 +103,7 @@ def get_profile(request: Request):
 
     return {
         "username": payload["sub"],
-        "role": payload.get("role", "unknown")
+        "role": payload.get("role", "unknown"),
         "token_expires": payload["exp"]
     }
 
