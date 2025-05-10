@@ -12,6 +12,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+print("Loaded URI:", os.getenv("MONGO_URL"))
 client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users = db["users"]
