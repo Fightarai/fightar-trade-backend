@@ -1,39 +1,45 @@
-from fastapi import APIRouter, HTTPException
-from user_model import User, Token
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 from passlib.context import CryptContext
-from jose import jwt
-import os
 import pymongo
-from datetime import datetime, timedelta
+import os
 
-router = APIRouter()  # DO NOT miss this
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = "HS256"
-
+router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-print("Loaded URI:", os.getenv("MONGO_URL"))
-client = pymongo.MongoClient(os.getenv("MONGO_URL"))
-db = client["fightar"]
-users = db["users"]
 
-def create_token(data: dict):
-    expire = datetime.utcnow() + timedelta(hours=24)
-    data.update({"exp": expire})
-    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
+# MongoDB setup
+client = pymongo.MongoClient(os.getenv("MONGODB_URL"))
+db = client["fightar"]
+users_collection = db["users"]
+
+class RegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
 
 @router.post("/register")
-def register(user: User):
-    if users.find_one({"email": user.email}):
-        raise HTTPException(status_code=400, detail="Email already exists")
-    hashed_pw = pwd_context.hash(user.password)
-    users.insert_one({"email": user.email, "password": hashed_pw})
-    return {"msg": "✅ Registered successfully"}
+def register_user(request: RegisterRequest):
+    existing_user = users_collection.find_one({"username": request.username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
 
-@router.post("/login", response_model=Token)
-def login(user: User):
-    record = users.find_one({"email": user.email})
-    if not record or not pwd_context.verify(user.password, record["password"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_token({"sub": user.email})
-    return {"access_token": token, "token_type": "bearer"}
+    hashed_password = pwd_context.hash(request.password)
+    user_data = {
+        "username": request.username,
+        "email": request.email,
+        "password": hashed_password,
+    }
+
+    users_collection.insert_one(user_data)
+    return {"message": "User registered successfully"}
+
+
+
+@router.get("/check-db", tags=["auth"])
+def check_db():
+    try:
+        count = users_collection.count_documents({})
+        return {"status": "success", "user_count": count}
+    except Exception as e:
+        return {"status": "error", "details": str(e)}
+
