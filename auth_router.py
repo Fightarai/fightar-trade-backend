@@ -34,6 +34,23 @@ def register_user(request: RegisterRequest):
     return {"message": "User registered successfully"}
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+@router.post("/login")
+def login_user(request: LoginRequest):
+    user = users_collection.find_one({"username": request.username})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    if not pwd_context.verify(request.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    return {"message": "Login successful", "username": user["username"]}
+
+
+
 
 @router.get("/check-db", tags=["auth"])
 def check_db():
