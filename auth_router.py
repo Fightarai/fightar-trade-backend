@@ -76,9 +76,12 @@ def verify_token(token: str):
         raise HTTPException(status_code=401, detail="Token verification failed")
 
 # Protected Route
+from fastapi import Header
+
 @router.get("/protected")
-def protected_route(token: str = Depends(verify_token)):
-    return {"msg": f"Access granted for {token}"}
+def protected_route(token: str = Header(...)):
+    username = verify_token(token)
+    return {"msg": f"Access granted for {username}"}
 
 # Check DB Health
 @router.get("/check-db", tags=["auth"])
