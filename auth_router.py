@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from passlib.context import CryptContext
-from jose import JWTError, jwt
+from jose import JWTError, jwt, ExpiredSignatureError
 from datetime import datetime, timedelta
 import pymongo
 import os
@@ -14,8 +14,8 @@ client = pymongo.MongoClient(os.getenv("MONGO_URL"))
 db = client["fightar"]
 users_collection = db["users"]
 
-# JWT Config
-SECRET_KEY = "supersecretjwtkey"  # replace with stronger value in production
+# JWT Config (move secret to environment for production)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecretjwtkey")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -24,17 +24,18 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     password: str
+    role: str  # "admin", "client", or "bot"
 
 class LoginRequest(BaseModel):
     username: str
     password: str
 
-class TokenData(BaseModel):
-    username: str
-
-# Register Endpoint
-@router.post("/register")
+# REGISTER
+@router.post("/register", tags=["auth"])
 def register_user(request: RegisterRequest):
+    if request.role not in ["admin", "client", "bot"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
     existing_user = users_collection.find_one({"username": request.username})
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already exists")
@@ -44,51 +45,84 @@ def register_user(request: RegisterRequest):
         "username": request.username,
         "email": request.email,
         "password": hashed_password,
+        "role": request.role
     }
 
     users_collection.insert_one(user_data)
     return {"message": "User registered successfully"}
 
-# Login Endpoint with JWT
-@router.post("/login")
+# LOGIN
+@router.post("/login", tags=["auth"])
 def login_user(request: LoginRequest):
     user = users_collection.find_one({"username": request.username})
     if not user or not pwd_context.verify(request.password, user["password"]):
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
-    # Generate JWT token
-    to_encode = {
+    payload = {
         "sub": user["username"],
+        "role": user.get("role", "client"),
         "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     }
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+    token = jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer"}
 
-# Dependency to verify token
+# VERIFY TOKEN
 def verify_token(token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return username
+        return payload
+    except ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
     except JWTError:
-        raise HTTPException(status_code=401, detail="Token verification failed")
+        raise HTTPException(status_code=401, detail="Invalid or malformed token")
 
-# Protected Route
-from fastapi import Request
-
-@router.get("/protected")
+# PROTECTED ROUTE
+@router.get("/protected", tags=["auth"])
 def protected_route(request: Request):
     auth_header = request.headers.get("authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
 
-    token = auth_header.split(" ")[1]  # Get the token part only
-    username = verify_token(token)
-    return {"msg": f"Access granted for {username}"}
+    token = auth_header.split(" ")[1]
+    payload = verify_token(token)
+    return {
+        "msg": f"Access granted for {payload['sub']}",
+        "role": payload['role']
+    }
 
-# Check DB Health
+# PROFILE
+@router.get("/profile", tags=["auth"])
+def get_profile(request: Request):
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    token = auth_header.split(" ")[1]
+    payload = verify_token(token)
+
+    return {
+        "username": payload["sub"],
+        "role": payload["role"],
+        "token_expires": payload["exp"]
+    }
+
+# ADMIN-ONLY
+@router.get("/admin-only", tags=["auth"])
+def admin_only(request: Request):
+    auth_header = request.headers.get("authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+    token = auth_header.split(" ")[1]
+    payload = verify_token(token)
+
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access only")
+
+    return {"msg": f"Welcome Admin {payload['sub']}"}
+
+# DB HEALTH CHECK
 @router.get("/check-db", tags=["auth"])
 def check_db():
     try:
