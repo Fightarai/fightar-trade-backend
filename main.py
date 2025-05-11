@@ -15,8 +15,9 @@ app = FastAPI(
 
 # ✅ CORS SETTINGS — ADD THIS
 origins = [
-    "http://localhost:3000",        # Local dev frontend
-    "https://fightar.ai",           # (Optional) Production domain
+    "http://localhost:3000",         # Old dev port
+    "http://localhost:3003",         # ✅ Add current dev port
+    "https://fightar.ai",            # Live
     "https://www.fightar.ai"
 ]
 
